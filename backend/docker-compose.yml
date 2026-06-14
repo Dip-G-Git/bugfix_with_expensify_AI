@@ -1,0 +1,4 @@
+version: '3.9'
+
+# No services required — app uses SQLite only.
+# Run locally with: npm run dev

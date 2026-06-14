@@ -1,0 +1,166 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+env:
+  NODE_VERSION: '26'
+
+jobs:
+  lint:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+
+  test-backend:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      - run: npm ci
+      - name: Generate Prisma client
+        working-directory: backend
+        run: npx prisma generate
+      - name: Push test schema
+        working-directory: backend
+        env:
+          DATABASE_URL: 'file:./test.db'
+        run: npx prisma db push
+      - name: Run unit tests
+        working-directory: backend
+        run: npm run test:unit
+      - name: Run API integration tests
+        working-directory: backend
+        env:
+          DATABASE_URL: 'file:./test.db'
+          REDIS_URL: 'redis://localhost:6379'
+          JWT_SECRET: 'test-secret-that-is-at-least-32-characters-long'
+          JWT_REFRESH_SECRET: 'test-refresh-secret-at-least-32-chars-ok'
+          ENCRYPTION_KEY: '0123456789abcdef0123456789abcdef'
+          PORT: '3002'
+          API_BASE_URL: 'http://localhost:3002'
+          GITHUB_TOKEN: 'test-github-token'
+          SMTP_HOST: 'smtp.ethereal.email'
+          SMTP_PORT: '587'
+          SMTP_USER: 'test@ethereal.email'
+          SMTP_PASS: 'testpassword'
+          CORS_ORIGIN: 'http://localhost:3000'
+        run: npm run test:api
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          directory: backend/coverage
+          flags: backend
+
+  test-frontend:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      - run: npm ci
+      - working-directory: frontend
+        run: npm run test
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          directory: frontend/coverage
+          flags: frontend
+
+  build:
+    name: Build Verification
+    runs-on: ubuntu-latest
+    needs: [lint, test-backend, test-frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      - run: npm ci
+      - name: Generate Prisma client
+        working-directory: backend
+        run: npx prisma generate
+      - run: npm run build
+      - name: Build Docker image
+        run: docker build -t expensify-notifier-backend ./backend
+
+  e2e:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    services:
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      - run: npm ci
+      - name: Install Playwright browsers
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Prepare test DB
+        working-directory: backend
+        env:
+          DATABASE_URL: 'file:./e2e-test.db'
+        run: |
+          npx prisma generate
+          npx prisma db push
+      - name: Run E2E tests
+        env:
+          NEXT_PUBLIC_API_URL: 'http://localhost:3001'
+          DATABASE_URL: 'file:./e2e-test.db'
+          REDIS_URL: 'redis://localhost:6379'
+          JWT_SECRET: 'test-secret-that-is-at-least-32-characters-long'
+          JWT_REFRESH_SECRET: 'test-refresh-secret-at-least-32-chars-ok'
+          ENCRYPTION_KEY: '0123456789abcdef0123456789abcdef'
+          PORT: '3001'
+          API_BASE_URL: 'http://localhost:3001'
+          GITHUB_TOKEN: 'test-github-token'
+          SMTP_HOST: 'smtp.ethereal.email'
+          SMTP_PORT: '587'
+          SMTP_USER: 'test@ethereal.email'
+          SMTP_PASS: 'testpassword'
+          CORS_ORIGIN: 'http://localhost:3000'
+        working-directory: frontend
+        run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+          retention-days: 7

@@ -1,0 +1,48 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Config {
+  id                  String   @id @default("singleton")
+  notificationEmail   String   @default("")
+  watchedRepo         String   @default("Expensify/App")
+  watchedLabel        String   @default("Help Wanted")
+  issueLimit          Int      @default(4)
+  githubToken         String?
+  lastEtag            String?
+  pollIntervalSeconds Int      @default(60)
+  dailySelectedCount  Int      @default(0)
+  dailyResetDate      String   @default("")
+  isRunning           Boolean  @default(false)
+  updatedAt           DateTime @updatedAt
+}
+
+model NotificationRecord {
+  id                String      @id @default(cuid())
+  githubIssueNumber Int         @unique
+  title             String
+  url               String
+  repoFullName      String
+  matchedLabel      String
+  status            NotifStatus @default(PENDING)
+  attempts          Int         @default(0)
+  lastAttemptAt     DateTime?
+  notifiedAt        DateTime?
+  hasPendingUpdate  Boolean     @default(false)
+  updateEmailCount  Int         @default(0)
+  lastUpdateEmailAt DateTime?
+  deletedAt         DateTime?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+}
+
+enum NotifStatus {
+  PENDING
+  SENT
+  FAILED
+}

@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm --version)",
+      "Bash(git init *)",
+      "Bash(git add *)",
+      "Bash(git config *)",
+      "Bash(git commit -m ' *)",
+      "Skill(claude-api)",
+      "Skill(claude-api:*)",
+      "Bash(npm install *)",
+      "Bash(node -e \"require\\('./backend/node_modules/@anthropic-ai/sdk'\\)\")",
+      "Bash(npx vitest *)",
+      "Bash(cd /c/Users/sandg/Desktop/Expensify_issue_FIx_Automate_machine/Code/backend && find . -type f -name \"*.ts\" -o -name \"*.js\" -o -name \"*.json\" | head -50)",
+      "Read(//c/c/Users/sandg/Desktop/Expensify_issue_FIx_Automate_machine/Code/**)",
+      "Bash(cd \"c:/Users/sandg/Desktop/Expensify_issue_FIx_Automate_machine/Code/backend/src\" && rm -f jobs/queues.ts jobs/workers/proposal-post.worker.ts jobs/workers/index.ts services/github-poller.service.ts services/proposal-monitor.service.ts services/guard.service.ts services/proposal-generator.service.ts utils/grace-period.ts api/auth.routes.ts api/issues.routes.ts api/proposals.routes.ts middleware/auth.middleware.ts && echo \"Deleted\")"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\sandg\\Desktop\\Expensify_issue_FIx_Automate_machine\\Code\\backend\\src\\jobs"
+    ]
+  }
+}

@@ -1,0 +1,61 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build output
+dist/
+build/
+.next/
+out/
+
+# Environment files
+.env
+.env.local
+.env.production
+.env.staging
+*.env
+
+# Database files
+*.db
+*.db-journal
+*.sqlite
+*.sqlite-journal
+
+# Prisma
+backend/prisma/migrations/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+logs/
+
+# Coverage
+coverage/
+.nyc_output/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Playwright
+frontend/playwright-report/
+frontend/test-results/
+frontend/playwright/.auth/
+
+# Redis dump
+dump.rdb
+
+# TypeScript incremental compilation
+tsconfig.tsbuildinfo
+*.tsbuildinfo
+
+# Docker
+.dockerignore

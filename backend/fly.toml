@@ -1,0 +1,39 @@
+# Fly.io configuration — github-issue-notifier
+# Estimated cost: ~$2.10/month (1x shared-cpu, 256MB RAM + 1GB volume)
+# Deploy: flyctl deploy --remote-only
+
+app = 'github-issue-notifier'
+primary_region = 'ams'   # Amsterdam — change to nearest: sjc, iad, sin, syd
+
+[build]
+
+[env]
+  NODE_ENV    = 'production'
+  PORT        = '3001'
+  DATABASE_URL = 'file:/data/prod.db'
+  CORS_ORIGIN = '*'
+  # SMTP_* and other secrets are set via: flyctl secrets set KEY=VALUE
+
+[[mounts]]
+  source      = 'notifier_data'
+  destination = '/data'
+  initial_size = '1gb'
+
+[http_service]
+  internal_port        = 3001
+  force_https          = true
+  auto_stop_machines   = false   # must stay on for the poller to run
+  auto_start_machines  = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    grace_period = '15s'
+    interval     = '30s'
+    method       = 'GET'
+    path         = '/health'
+    timeout      = '10s'
+
+[[vm]]
+  cpu_kind = 'shared'
+  cpus     = 1
+  memory   = '256mb'

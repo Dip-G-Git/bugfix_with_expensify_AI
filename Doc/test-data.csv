@@ -1,0 +1,45 @@
+Test ID,Test Type,Category,Issue Number,Issue Title,Repo,Labels,Action,Expected Outcome,Verified,Notes
+TD-001,Unit,events-poller,47668,Fix accessibility issue in ExpensifyCard form,Expensify/App,Help Wanted,opened,NotificationRecord created (PENDING),YES,Issue < 7 days old + under daily limit
+TD-002,Unit,events-poller,47234,Update deprecated requestAnimationFrame usage,Expensify/App,Help Wanted,labeled,NotificationRecord created (PENDING),YES,labeled action also triggers selection
+TD-003,Unit,events-poller,47668,Fix accessibility issue in ExpensifyCard form,Expensify/App,Help Wanted,opened,No record created (duplicate),YES,githubIssueNumber is UNIQUE
+TD-004,Unit,events-poller,47999,Internal CI task,Expensify/App,Bug Internal,opened,No record created (wrong label),YES,Label mismatch
+TD-005,Unit,events-poller,44001,Old issue over 7 days,Expensify/App,Help Wanted,opened,No record created (stale),YES,created_at > 7 days ago
+TD-006,Unit,events-poller,47668,Fix accessibility issue in ExpensifyCard form,Expensify/App,Help Wanted,edited,hasPendingUpdate=true,YES,SENT record → update queued
+TD-007,Unit,events-poller,47668,Fix accessibility issue in ExpensifyCard form,Expensify/App,Help Wanted,reopened,hasPendingUpdate=true,YES,reopened action triggers update
+TD-008,Unit,events-poller,,,,,,304 Not Modified → return pollIntervalSeconds,YES,ETag unchanged
+TD-009,Unit,events-poller,,,,,,403 Rate limit → return 120s backoff,YES,Authenticated token recommended
+TD-010,Unit,events-poller,47668,Fix accessibility issue in ExpensifyCard form,Expensify/App,Help Wanted,opened,Daily limit reached → skip,YES,dailySelectedCount=4 issueLimit=4
+TD-011,Unit,events-poller,,,,,,Daily reset at midnight,YES,dailyResetDate != today → count=0
+TD-012,Unit,events-poller,,,,,,Invalid watchedRepo format → return pollInterval,YES,Missing slash in repo name
+TD-013,Unit,notification-sender,47668,Fix accessibility issue in ExpensifyCard form,Expensify/App,Help Wanted,,PENDING → email sent → SENT,YES,Initial notification
+TD-014,Unit,notification-sender,47668,Fix accessibility issue in ExpensifyCard form,Expensify/App,Help Wanted,,SMTP fails → stay PENDING → retry in 20s,YES,attempts++
+TD-015,Unit,notification-sender,47668,Fix accessibility issue in ExpensifyCard form,Expensify/App,Help Wanted,,hasPendingUpdate=true → update email sent,YES,Update #1
+TD-016,Unit,notification-sender,47234,Update deprecated requestAnimationFrame usage,Expensify/App,Help Wanted,,hasPendingUpdate stays true on SMTP fail,YES,Retried next 20s cycle
+TD-017,Unit,email-service,47668,Fix accessibility issue in ExpensifyCard form,Expensify/App,Help Wanted,NEW,Subject: [New Issue] #47668: title,YES,Blue badge
+TD-018,Unit,email-service,47668,Fix accessibility issue in ExpensifyCard form,Expensify/App,Help Wanted,UPDATE,Subject: [Update #1] Issue #47668: title,YES,Orange badge
+TD-019,Unit,email-service,47668,Fix accessibility issue in ExpensifyCard form,Expensify/App,Help Wanted,NEW,SMTP error → function throws,YES,Error propagates to caller
+TD-020,Integration,config-api,,,,,,GET /api/config → 200 no githubToken,YES,githubToken stripped from response
+TD-021,Integration,config-api,,,,,,PUT /api/config notificationEmail → 200,YES,email updated
+TD-022,Integration,config-api,,,,,,PUT /api/config invalid email → 400,YES,Zod validation
+TD-023,Integration,config-api,,,,,,PUT /api/config missing slash in repo → 400,YES,Zod regex validation
+TD-024,Integration,config-api,,,,,,PUT /api/config repo change → ETag reset,YES,lastEtag=null dailySelectedCount=0
+TD-025,Integration,config-api,,,,,,GET /api/config/status → all fields,YES,isRunning watchedRepo issueLimit etc
+TD-026,Integration,config-api,,,,,,POST /api/config/start → 400 no email,YES,Missing notificationEmail
+TD-027,Integration,config-api,,,,,,POST /api/config/start → 200 isRunning=true,YES,With email configured
+TD-028,Integration,config-api,,,,,,POST /api/config/stop → 200 isRunning=false,YES,Idempotent
+TD-029,Integration,notifications-api,47668,Fix accessibility issue in ExpensifyCard form,Expensify/App,Help Wanted,,GET /api/notifications → paginated,YES,Default excludes deleted
+TD-030,Integration,notifications-api,47234,Update deprecated requestAnimationFrame usage,Expensify/App,Help Wanted,,GET /api/notifications?status=SENT → filtered,YES,Status filter
+TD-031,Integration,notifications-api,47668,Fix accessibility issue in ExpensifyCard form,Expensify/App,Help Wanted,,GET /api/notifications?includeDeleted=true → all,YES,Includes soft-deleted
+TD-032,Integration,notifications-api,47668,Fix accessibility issue in ExpensifyCard form,Expensify/App,Help Wanted,,DELETE /api/notifications/:id → soft delete,YES,Sets deletedAt
+TD-033,Integration,notifications-api,47668,Fix accessibility issue in ExpensifyCard form,Expensify/App,Help Wanted,,DELETE soft-deleted again → 409,YES,Conflict
+TD-034,Integration,notifications-api,47668,Fix accessibility issue in ExpensifyCard form,Expensify/App,Help Wanted,,DELETE /api/notifications/:id/hard → permanent,YES,Record gone from DB
+TD-035,Integration,notifications-api,47668,Fix accessibility issue in ExpensifyCard form,Expensify/App,Help Wanted,,POST /api/notifications/:id/restore → deletedAt=null,YES,Restore soft-deleted
+TD-036,Integration,notifications-api,47668,Fix accessibility issue in ExpensifyCard form,Expensify/App,Help Wanted,,POST restore on non-deleted → 409,YES,Not deleted
+TD-037,Integration,health-api,,,,,,GET /health → 200 status ok,YES,Uptime field present
+TD-038,Integration,health-api,,,,,,GET /health/ready → 200 db connected,YES,SQLite accessible
+TD-039,Unit,health-api,,,,,,GET /health/ready → 503 when DB down,YES,Mocked prisma failure
+TD-040,Performance,email-sender,,,,,1 record,Process 1 PENDING in < 50ms,YES,Mocked SMTP
+TD-041,Performance,email-sender,,,,,10 records,Process 10 PENDING in < 200ms,YES,Mocked SMTP
+TD-042,Performance,email-sender,,,,,50 records,Process 50 PENDING in < 500ms,YES,Mocked SMTP
+TD-043,Performance,email-sender,,,,,20 records,Throughput > 100 emails/sec,YES,Mocked SMTP - actual 355k/sec
+TD-044,Integration,lifecycle,47668,Fix accessibility issue in ExpensifyCard form,Expensify/App,Help Wanted,,PENDING→soft-delete→restore→hard-delete,YES,Full lifecycle

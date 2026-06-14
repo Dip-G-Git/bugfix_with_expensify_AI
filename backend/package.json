@@ -1,0 +1,57 @@
+{
+  "name": "expensify-notifier-backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/server.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src tests --ext .ts --max-warnings 0",
+    "lint:fix": "eslint src tests --ext .ts --fix",
+    "test": "vitest run --fileParallelism=false",
+    "test:unit": "vitest run tests/unit",
+    "test:api": "vitest run --fileParallelism=false tests/integration",
+    "test:performance": "vitest run tests/performance",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --fileParallelism=false --coverage",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev",
+    "db:migrate:prod": "prisma migrate deploy",
+    "db:generate": "prisma generate",
+    "db:studio": "prisma studio",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:reset": "prisma migrate reset --force"
+  },
+  "dependencies": {
+    "@octokit/rest": "^21.0.0",
+    "@prisma/client": "^6.0.0",
+    "cors": "^2.8.6",
+    "express": "^5.0.0",
+    "express-rate-limit": "^7.0.0",
+    "helmet": "^8.0.0",
+    "nodemailer": "^8.0.0",
+    "pino": "^9.0.0",
+    "pino-pretty": "^13.0.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "@types/supertest": "^6.0.0",
+    "@types/cors": "^2.8.19",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "@vitest/coverage-v8": "^2.0.0",
+    "eslint": "^9.0.0",
+    "prisma": "^6.0.0",
+    "supertest": "^7.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.0.0"
+  }
+}
