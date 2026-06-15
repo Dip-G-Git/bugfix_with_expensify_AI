@@ -2,7 +2,7 @@
 # Estimated cost: ~$2.10/month (1x shared-cpu, 256MB RAM + 1GB volume)
 # Deploy: flyctl deploy --remote-only
 
-app = 'github-issue-notifier'
+app = 'github-issue-notifier-ai-sandipan'
 primary_region = 'ams'   # Amsterdam — change to nearest: sjc, iad, sin, syd
 
 [build]
