@@ -231,7 +231,7 @@ Lines      : 95.09%
 ```bash
 # First time
 cd backend
-flyctl launch --name github-issue-notifier --no-deploy
+flyctl launch --name expensify-backend-wispy-coastline-4104 --no-deploy
 flyctl volumes create notifier_data --size 1 --region ams
 flyctl secrets set \
   SMTP_HOST=smtp.gmail.com \

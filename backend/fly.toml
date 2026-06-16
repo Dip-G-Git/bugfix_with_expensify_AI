@@ -1,10 +1,10 @@
-# fly.toml app configuration file generated for expensify-backend-wispy-coastline-4104 on 2026-06-16T04:22:15+05:30
+# fly.toml app configuration file generated for expensify-backend-dusky-summit-570 on 2026-06-16T10:30:26+05:30
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-app = 'expensify-backend-wispy-coastline-4104'
-primary_region = 'ams'
+app = 'expensify-backend-dusky-summit-570'
+primary_region = 'bom'
 
 [build]
 
