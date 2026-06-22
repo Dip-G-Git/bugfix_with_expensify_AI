@@ -22,15 +22,15 @@ interface RepoEvent {
 
 const RECENTLY_CREATED_DAYS = 7;
 
-// Short-lived cache populated by fastPoll() so AutoProposalService can skip the redundant
-// GET /issues/:number call — the data was already fetched during detection.
-export const issueDataCache = new Map<number, { title: string; body: string; cachedAt: number }>();
-const ISSUE_CACHE_TTL_MS = 2 * 60 * 1000;
-
 function isRecentlyCreated(createdAt: string): boolean {
   const ageMs = Date.now() - new Date(createdAt).getTime();
   return ageMs <= RECENTLY_CREATED_DAYS * 24 * 60 * 60 * 1000;
 }
+
+// Short-lived cache populated by fastPoll() so AutoProposalService can skip the redundant
+// GET /issues/:number call — the data was already fetched during detection.
+export const issueDataCache = new Map<number, { title: string; body: string; cachedAt: number }>();
+const ISSUE_CACHE_TTL_MS = 2 * 60 * 1000;
 
 export class EventsPollerService {
   static async poll(): Promise<{ pollInterval: number; hasChanges: boolean }> {

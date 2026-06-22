@@ -38,7 +38,7 @@ export async function generateProposal(input: ProposalInput): Promise<GeneratedP
   const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
 
   const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
+    model: 'claude-opus-4-8',
     max_tokens: 4096,
     messages: [{ role: 'user', content: buildPrompt(input) }],
   });
