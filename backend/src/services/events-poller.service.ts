@@ -469,7 +469,9 @@ export class EventsPollerService {
       }
 
       await Promise.all([
-        prisma.notificationRecord.createMany({ data: toCreate, skipDuplicates: true }),
+        // Note: skipDuplicates is unsupported on SQLite; duplicates are already
+        // filtered out above via existingNums before building toCreate.
+        prisma.notificationRecord.createMany({ data: toCreate }),
         prisma.config.update({
           where: { id: 'singleton' },
           data: { dailySelectedCount: newDailyCount },

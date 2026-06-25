@@ -121,7 +121,7 @@ function extractRootCause(commentBody: string): string | null {
   const match = commentBody.match(
     /###\s*What is the root cause[^\n]*\n+([\s\S]*?)(\n###|\n##|$)/i
   );
-  return match ? match[1].trim() : null;
+  return match?.[1]?.trim() ?? null;
 }
 
 function jaccardSimilarity(a: string, b: string): number {
