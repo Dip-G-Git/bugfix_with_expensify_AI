@@ -21,21 +21,21 @@ function startEventsPoller(): void {
       // Fire email sender and auto-proposal in parallel — fully independent,
       // neither blocks nor depends on the other.
       NotificationSenderService.send().catch((err) =>
-        logger.error(err, 'Email send after poller failed')
+        logger.error(err, 'Email send after poller failed'),
       );
       AutoProposalService.run().catch((err) =>
-        logger.error(err, 'Auto-proposal after poller failed')
+        logger.error(err, 'Auto-proposal after poller failed'),
       );
 
-      pollerTimer = setTimeout(runAndReschedule, pollInterval * 1000);
+      pollerTimer = setTimeout(() => void runAndReschedule(), pollInterval * 1000);
     } catch (err) {
       logger.error(err, 'Unhandled error in events poller, retrying in 60s');
-      pollerTimer = setTimeout(runAndReschedule, 60_000);
+      pollerTimer = setTimeout(() => void runAndReschedule(), 60_000);
     }
   }
 
   // First run after a short delay to let the server finish starting
-  pollerTimer = setTimeout(runAndReschedule, 2_000);
+  pollerTimer = setTimeout(() => void runAndReschedule(), 2_000);
 }
 
 function startFastPoller(): void {
@@ -44,20 +44,20 @@ function startFastPoller(): void {
       const hasNew = await EventsPollerService.fastPoll();
       if (hasNew) {
         NotificationSenderService.send().catch((err) =>
-          logger.error(err, 'Email send after fast poller failed')
+          logger.error(err, 'Email send after fast poller failed'),
         );
         AutoProposalService.run().catch((err) =>
-          logger.error(err, 'Auto-proposal after fast poller failed')
+          logger.error(err, 'Auto-proposal after fast poller failed'),
         );
       }
     } catch (err) {
       logger.error(err, 'Unhandled error in fast poller');
     }
-    fastPollerTimer = setTimeout(runAndReschedule, 5_000);
+    fastPollerTimer = setTimeout(() => void runAndReschedule(), 5_000);
   }
 
   // Stagger start slightly so fast poller and main poller don't both fire at t=2s
-  fastPollerTimer = setTimeout(runAndReschedule, 4_000);
+  fastPollerTimer = setTimeout(() => void runAndReschedule(), 4_000);
 }
 
 export function stopSchedulers(): void {
