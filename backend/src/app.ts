@@ -15,6 +15,11 @@ import { logger } from './utils/logger.js';
 export function createApp() {
   const app = express();
 
+  // Behind Fly's proxy a single X-Forwarded-For hop is added. Trust it so
+  // express-rate-limit keys on the real client IP instead of the proxy IP
+  // (otherwise all traffic shares one bucket and trips ERR_ERL_UNEXPECTED_X_FORWARDED_FOR).
+  app.set('trust proxy', 1);
+
   app.use(helmet());
   app.use(cors({ origin: env.CORS_ORIGIN, credentials: true }));
 

@@ -108,10 +108,24 @@ proposalsRouter.post('/', async (req, res, next) => {
     }
 
     const { commentBody } = generated;
-    const postRes = await octokit.request(
-      'POST /repos/{owner}/{repo}/issues/{issue_number}/comments',
-      { owner, repo, issue_number: issueNumber, body: commentBody }
-    );
+    let postRes;
+    try {
+      postRes = await octokit.request(
+        'POST /repos/{owner}/{repo}/issues/{issue_number}/comments',
+        { owner, repo, issue_number: issueNumber, body: commentBody }
+      );
+    } catch (err: unknown) {
+      // 403 here means the token authenticated but isn't allowed to comment on this repo.
+      // Most common cause: a fine-grained PAT (can't write to repos you don't own) or a
+      // classic PAT missing the `public_repo`/`repo` scope.
+      if ((err as { status?: number }).status === 403) {
+        res.status(403).json({
+          error: `GitHub token cannot post comments to ${repoFullName}. Use a classic PAT with the \`public_repo\` scope (a fine-grained PAT cannot comment on repos you don't own).`,
+        });
+        return;
+      }
+      throw err;
+    }
 
     const record = await prisma.proposalRecord.create({
       data: {
