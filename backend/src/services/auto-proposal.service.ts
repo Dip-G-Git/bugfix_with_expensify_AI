@@ -5,6 +5,7 @@ import { logger } from '../utils/logger.js';
 import { generateProposal } from './proposal-generator.service.js';
 import {
   assertNoExistingProposal,
+  assertCommentCountInRange,
   assertProposalIsDifferent,
   listIssueComments,
   GuardViolationError,
@@ -138,6 +139,21 @@ export class AutoProposalService {
               logger.info(
                 { issueNumber: record.githubIssueNumber, reason: err.message },
                 'Auto-proposal guard blocked'
+              );
+              return;
+            }
+            throw err;
+          }
+
+          // Only engage with lightly-discussed issues (1–4 comments). Checked before
+          // the LLM call so out-of-range issues are skipped without incurring cost.
+          try {
+            await assertCommentCountInRange(comments);
+          } catch (err) {
+            if (err instanceof GuardViolationError) {
+              logger.info(
+                { issueNumber: record.githubIssueNumber, reason: err.message },
+                'Auto-proposal skipped — comment count out of range'
               );
               return;
             }

@@ -56,6 +56,28 @@ export async function assertNoExistingProposal(
   }
 }
 
+// Auto-proposal only engages with issues that have a small amount of existing
+// discussion: at least MIN (some triage/context exists) and at most MAX (the
+// conversation hasn't already moved on or been effectively claimed).
+export const MIN_ISSUE_COMMENTS = 1;
+export const MAX_ISSUE_COMMENTS = 4;
+
+// Guard: the issue's existing comment count must fall within [min, max].
+// eslint-disable-next-line @typescript-eslint/require-await
+export async function assertCommentCountInRange(
+  comments: IssueComment[],
+  min: number = MIN_ISSUE_COMMENTS,
+  max: number = MAX_ISSUE_COMMENTS
+): Promise<void> {
+  const count = comments.length;
+  if (count < min || count > max) {
+    throw new GuardViolationError(
+      `Issue has ${count} comment(s); auto-proposal only engages when there are ${min}–${max}`,
+      { count, min, max }
+    );
+  }
+}
+
 // Guard: the new proposal must differ meaningfully from existing proposals
 // already posted on the issue (by anyone), based on root-cause text overlap.
 // Kept async for a uniform Promise<void> guard interface even though the body is sync.
