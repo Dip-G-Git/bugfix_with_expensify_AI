@@ -17,16 +17,14 @@ function makeComments(n: number): IssueComment[] {
 }
 
 describe('assertCommentCountInRange', () => {
-  it('accepts issues with 1 to 4 comments (inclusive bounds)', async () => {
+  it('accepts issues from 0 to 4 comments (inclusive bounds)', async () => {
     for (let n = MIN_ISSUE_COMMENTS; n <= MAX_ISSUE_COMMENTS; n++) {
       await expect(assertCommentCountInRange(makeComments(n))).resolves.toBeUndefined();
     }
   });
 
-  it('rejects issues with zero comments', async () => {
-    await expect(assertCommentCountInRange(makeComments(0))).rejects.toBeInstanceOf(
-      GuardViolationError
-    );
+  it('accepts issues with zero comments', async () => {
+    await expect(assertCommentCountInRange(makeComments(0))).resolves.toBeUndefined();
   });
 
   it('rejects issues with more than 4 comments', async () => {

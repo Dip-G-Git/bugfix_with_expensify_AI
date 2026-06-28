@@ -145,7 +145,7 @@ export class AutoProposalService {
             throw err;
           }
 
-          // Only engage with lightly-discussed issues (1–4 comments). Checked before
+          // Only engage with lightly-discussed issues (0–4 comments). Checked before
           // the LLM call so out-of-range issues are skipped without incurring cost.
           try {
             await assertCommentCountInRange(comments);

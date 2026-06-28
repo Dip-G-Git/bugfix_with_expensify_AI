@@ -57,9 +57,9 @@ export async function assertNoExistingProposal(
 }
 
 // Auto-proposal only engages with issues that have a small amount of existing
-// discussion: at least MIN (some triage/context exists) and at most MAX (the
-// conversation hasn't already moved on or been effectively claimed).
-export const MIN_ISSUE_COMMENTS = 1;
+// discussion: at least MIN and at most MAX (beyond which the conversation has
+// likely moved on or the issue has effectively been claimed).
+export const MIN_ISSUE_COMMENTS = 0;
 export const MAX_ISSUE_COMMENTS = 4;
 
 // Guard: the issue's existing comment count must fall within [min, max].
