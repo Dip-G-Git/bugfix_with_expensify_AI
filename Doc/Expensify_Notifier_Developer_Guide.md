@@ -1,6 +1,6 @@
 > **Note:** This file captures (1) the human Expensify contributor workflow (Upwork hiring, PR process — background context, not something this codebase automates) and (2) the original informal requirements/notes written before implementation. It is not a description of the system as built. Two notable differences from what shipped:
-> - This doc says "Grace period 24 hours" (line 39) — the implemented staleness filter is **7 days**, not 24 hours, and there is no 24-hour grace-period concept anywhere in the code (see [ARCHITECTURE.md](ARCHITECTURE.md) Section 5, "Recently-created filter").
-> - This doc envisions posting a proposal comment **immediately and automatically** when the watched label is added (line 50). What shipped is `POST /api/proposals` — a manually-triggered endpoint, gated by three guards (duplicate proposal, pending assigned work, similarity to existing proposals), not an automatic action taken by the poller.
+> - This doc says "Grace period 24 hours" (line 39) — the implemented staleness filter selects only issues created on the **current calendar day** (`isCreatedToday`); there is no 24-hour grace-period concept anywhere in the code (see [ARCHITECTURE.md](ARCHITECTURE.md) Section 5, "Current-day created filter").
+> - Proposals can be posted **automatically** when `autoProposal` is enabled (`AutoProposalService` runs after each poll cycle for newly detected issues), or **manually** via `POST /api/proposals`. Both paths are gated by the same guards (duplicate proposal, similarity to existing proposals; the manual endpoint additionally checks pending assigned work).
 >
 > For the current, accurate system description, see [ARCHITECTURE.md](ARCHITECTURE.md), [README.md](README.md), and the root [CLAUDE.md](../CLAUDE.md).
 

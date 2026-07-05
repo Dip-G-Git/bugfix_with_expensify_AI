@@ -9,9 +9,9 @@ No webhooks needed. No Redis. No Docker required for local dev. No auth. SQLite 
 ## How It Works
 
 ```
-GitHub Issues REST API  ◄── Fast Poller (every 5s)
+GitHub Issues REST API  ◄── Full-Scan Poller (every 5s, full snapshot)
          │
-         ▼  new issue with watched label? created ≤ 7 days ago? under daily limit?
+         ▼  new issue with watched label? created today? under daily limit?
     NotificationRecord saved (PENDING) + issue data cached in memory
          │
          ▼  fires both in parallel, immediately
@@ -20,18 +20,21 @@ GitHub Issues REST API  ◄── Fast Poller (every 5s)
     ▼                                           ▼
 Email sent                              Auto-Proposal (if enabled)
  ~8–12s from label detected              Claude claude-opus-4-8
- 3-email cap if no proposal posted       ~15–25s from label detected
- by myGithubUsername yet                 Posts comment to GitHub issue
+                                         ~15–25s from label detected
+                                         Posts comment to GitHub issue
     │
     ▼  Issue updated later?
-GitHub Events API  ◄── Events Poller (~60s, ETag-cached, dynamic interval)
-    → hasPendingUpdate = true → update email sent next cycle
+Same 5s Full-Scan Poller detects the change
+    → hasPendingUpdate = true → update email sent next cycle,
+      but ONLY if the issue already has a proposal comment
 ```
 
 **Key properties:**
 - Email and proposal fire simultaneously — neither waits for the other
-- Fast Poller (5s REST) handles initial detection; Events Poller (~60s) handles updates
-- 7-day guard on both pollers — issues older than 7 days are never selected
+- A single 5s full-snapshot poller handles detection, updates, and closures — a complete open-issue listing every cycle means no new issue is missed
+- Issues are fetched sorted by creation date (newest first)
+- **Current-day guard** — only issues created today are ever selected
+- **Update emails go out only for issues that already have a proposal comment**
 - Proposal guards prevent duplicates before calling the LLM
 
 ---
@@ -106,7 +109,7 @@ curl -X POST http://localhost:3001/api/config/start
 curl http://localhost:3001/api/config/status
 ```
 
-> `myGithubUsername` is required for `autoProposal: true`. It gates the 3-email cap and is used to check if you already posted a proposal on an issue.
+> `myGithubUsername` is required for `autoProposal: true`. It gates whether update emails are sent (only for issues you've already proposed on) and is used to check if you already posted a proposal on an issue.
 
 ---
 
@@ -153,11 +156,11 @@ Without `ANTHROPIC_API_KEY`, all email notification features work normally. Auto
 
 | Stage | Typical time | Notes |
 |---|---|---|
-| Label added → detected | **0–5s** | Fast Poller fires every 5s |
+| Label added → detected | **0–5s** | Full-scan poller fires every 5s |
 | Detection → email in inbox | **+1–2s** | SMTP pooled connection (no handshake delay) |
 | **Label → email total** | **~6–12s** | Well under 1 minute |
-| Issue data (cache hit) | **+0ms** | Pre-cached during Fast Poller detection |
-| Issue data (cache miss) | **+400–1200ms** | Live GET /issues (Events Poller detections) |
+| Issue data (cache hit) | **+0ms** | Pre-cached during poller detection |
+| Issue data (cache miss) | **+400–1200ms** | Live GET /issues (rare — cache evicted) |
 | GitHub comments fetch | **+200–600ms** | 1 API call per issue |
 | Claude `claude-opus-4-8` generation | **+8–20s** | Root cause + proposal writing |
 | Post GitHub comment | **+200–500ms** | 1 API call |
@@ -178,7 +181,7 @@ backend/
 │   │   ├── proposals.routes.ts           manual generate + list proposals
 │   │   └── health.routes.ts              health checks
 │   ├── services/
-│   │   ├── events-poller.service.ts      GitHub Events API + ETag polling;
+│   │   ├── issue-poller.service.ts       5s full-snapshot Issues REST API scan;
 │   │   │                                 exports issueDataCache for auto-proposal
 │   │   ├── notification-sender.service.ts  drain PENDING records, send emails
 │   │   ├── auto-proposal.service.ts      auto-generate + post proposals via Claude;
@@ -187,8 +190,8 @@ backend/
 │   │   ├── proposal-guards.service.ts    guards gating proposal creation
 │   │   └── email.service.ts              Nodemailer wrapper (pooled SMTP connection)
 │   ├── jobs/
-│   │   └── schedulers.ts                 two schedulers: Events Poller (dynamic ~60s)
-│   │                                     + Fast Poller (5s); both fire email + proposal
+│   │   └── schedulers.ts                 single 5s full-scan poller;
+│   │                                     fires email + proposal on activity
 │   ├── middleware/
 │   │   ├── error.middleware.ts
 │   │   └── not-found.middleware.ts
@@ -262,15 +265,15 @@ All set via `PUT /api/config`:
 | `watchedLabel` | `Help Wanted` | Label to filter on |
 | `issueLimit` | `4` | Max new issues selected per day |
 | `githubToken` | `null` | Optional PAT (strongly recommended) |
-| `myGithubUsername` | `""` | Your GitHub username — required for `autoProposal` and the 3-email cap |
+| `myGithubUsername` | `""` | Your GitHub username — required for `autoProposal` and update-email gating |
 | `autoProposal` | `false` | Auto-generate and post proposals when new issues are detected |
 | `notifyStartTime` | `""` | Notify window start, `HH:MM` 24h. Empty = always notify |
 | `notifyEndTime` | `""` | Notify window end, `HH:MM` 24h. Empty = always notify |
 | `notifyTimezone` | `"UTC"` | IANA timezone for the notify window (e.g. `Asia/Kolkata`) |
 
-### Email cap behavior
+### Update-email behavior
 
-When `myGithubUsername` is set, emails for a given issue are capped at **3 total** (1 initial + 2 updates) if you have not posted a proposal on it. Once you post a proposal (manually via `POST /api/proposals` or automatically via `autoProposal: true`), the cap lifts and update emails resume normally.
+An **initial** email is always sent when a new (current-day) issue is detected. **Update** emails, however, are only sent for an issue that **already has a proposal comment** — posted manually via `POST /api/proposals` or automatically via `autoProposal: true` (matched on `myGithubUsername` when set). If no proposal exists on the issue, its pending update is cleared and no update email goes out.
 
 ---
 
@@ -321,10 +324,10 @@ flyctl deploy --remote-only
 - Check notify window: `isInNotifyWindow: false` in status means emails are held until the window opens
 
 **Issues not being detected:**
-- Set a `githubToken` — unauthenticated limit is 60 req/hour; Fast Poller alone uses ~720 req/hour
+- Set a `githubToken` — unauthenticated limit is 60 req/hour; the 5s full-scan poller uses at least ~720 req/hour (more for repos with many open labeled issues, since each cycle paginates the full list)
 - Check logs for 403 errors (rate limit)
 - Verify `watchedRepo` format: must be `owner/repo` (e.g. `Expensify/App`)
-- Issues must be ≤ 7 days old to be selected
+- Issues must have been created **today** to be selected
 
 **Auto-proposal not posting:**
 - Check `autoProposal: true` and `myGithubUsername` is set in `GET /api/config/status`

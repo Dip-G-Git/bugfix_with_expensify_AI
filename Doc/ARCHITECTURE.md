@@ -28,23 +28,20 @@ Monitors any GitHub repository for new issues matching a configured label, sends
 │  ┌──────────────────────▼───────────────────────────────────────┐  │
 │  │                      Service Layer                           │  │
 │  │                                                               │  │
-│  │  ┌──────────────────────────┐  ┌──────────────────────────┐  │  │
-│  │  │  EventsPollerService     │  │  Fast Poller             │  │  │
-│  │  │  (~60s, ETag-cached,     │  │  (5s REST Issues API,    │  │  │
-│  │  │  dynamic X-Poll-Interval)│  │  detects in 0–5s;        │  │  │
-│  │  │  handles updates /       │  │  populates issueDataCache)│  │  │
-│  │  │  Events API              │  └────────────┬─────────────┘  │  │
-│  │  └────────────┬─────────────┘               │                │  │
-│  │               │         both fire after each successful poll  │  │
-│  │               └──────────────────┬──────────┘                │  │
-│  │                                  │                            │  │
-│  │           ┌──────────────────────┴──────────────────────┐    │  │
+│  │  ┌──────────────────────────────────────────────────────┐  │  │
+│  │  │  IssuePollerService.fullScan()                        │  │  │
+│  │  │  (5s full snapshot of open labeled issues, REST Issues │  │  │
+│  │  │  API, sorted by created date; detects new/updated/     │  │  │
+│  │  │  closed issues; populates issueDataCache)              │  │  │
+│  │  └────────────────────────────┬───────────────────────────┘  │  │
+│  │                               │  both fire after each poll     │  │
+│  │           ┌───────────────────┴──────────────────────────┐    │  │
 │  │           │  (parallel, fully independent)               │    │  │
 │  │    ┌──────┴──────────────┐   ┌──────────────────────┐   │    │  │
 │  │    │ NotificationSender  │   │ AutoProposalService   │   │    │  │
 │  │    │ Service             │   │ (reads issueDataCache;│   │    │  │
 │  │    │ (isRunning lock,    │   │ generates via LLM +   │   │    │  │
-│  │    │ 3-email cap logic,  │   │ posts GitHub comment; │   │    │  │
+│  │    │ update-email gate,  │   │ posts GitHub comment; │   │    │  │
 │  │    │ notify window gate) │   │ isRunning lock)       │   │    │  │
 │  │    └─────────────────────┘   └──────────────────────┘   │    │  │
 │  │           └──────────────────────────────────────────────┘    │  │
@@ -66,82 +63,49 @@ Monitors any GitHub repository for new issues matching a configured label, sends
         │              │                  │
   ┌─────▼──────┐ ┌─────▼──────┐    ┌──────▼──────┐
   │ GitHub API │ │ Anthropic  │    │ Gmail SMTP  │
-  │ Events +   │ │ API        │    │ (Nodemailer,│
-  │ REST Issues│ │ (claude-   │    │ pooled      │
-  │ + Octokit  │ │ opus-4-8)  │    │ connection) │
+  │ REST Issues│ │ API        │    │ (Nodemailer,│
+  │ + Octokit  │ │ (claude-   │    │ pooled      │
+  │            │ │ opus-4-8)  │    │ connection) │
   └────────────┘ └────────────┘    └─────────────┘
 ```
 
 ---
 
-## 3. Two Schedulers, Parallel Reactive Services
+## 3. One Scheduler, Parallel Reactive Services
 
-`backend/src/jobs/schedulers.ts` starts two independent timers. After each successful detection cycle, **both** `NotificationSenderService` and `AutoProposalService` are fired in parallel using fire-and-forget `.catch()` — neither blocks the other or the poller.
+`backend/src/jobs/schedulers.ts` starts a single 5-second timer. After each poll cycle that produced activity, **both** `NotificationSenderService` and `AutoProposalService` are fired in parallel using fire-and-forget `.catch()` — neither blocks the other or the poller.
 
-### Fast Poller (5s REST)
+### Full-Scan Poller (5s)
 
-Detects new issues within 0–5 seconds of label addition.
-
-```
-startup (after 4s stagger)
-    │
-    ▼  every 5 seconds
-EventsPollerService.fastPoll()
-    ├─ read Config from DB
-    ├─ if !isRunning → return false
-    ├─ GET /repos/{owner}/{repo}/issues?labels=...&state=open&sort=created&per_page=20
-    │   for each issue:
-    │   ├─ skip if created_at > 7 days ago  (isRecentlyCreated guard)
-    │   ├─ skip if already in DB (upsert with skipDuplicates)
-    │   └─ CREATE NotificationRecord (PENDING) + write to issueDataCache
-    │       (issueDataCache: Map<issueNumber, {title, body, cachedAt}>)
-    │
-    ├─ returns hasNew: boolean
-    │
-    └─ if hasNew:
-        ├─ NotificationSenderService.send()   ← parallel, fire-and-forget
-        └─ AutoProposalService.run()          ← parallel, fire-and-forget
-```
-
-### Events Poller (~60s, dynamic)
-
-Handles updates to watched issues and catches any detections the Fast Poller missed.
+A complete snapshot of every open labeled issue, every 5 seconds. Because the whole list is re-read each cycle (no incremental `since` watermark), a failed cycle is fully recovered by the next one — no newly created issue can slip through. Detects new issues within 0–5 seconds of label addition, plus updates and closures.
 
 ```
 startup (after 2s)
     │
-    ▼
-EventsPollerService.poll()
+    ▼  every 5 seconds
+IssuePollerService.fullScan()
     ├─ read Config from DB
-    ├─ if !isRunning → return {pollInterval: 60, hasChanges: false}
-    ├─ daily reset check (dailySelectedCount → 0 at midnight)
-    ├─ GET /repos/{owner}/{repo}/events?per_page=20
-    │   Header: If-None-Match: {lastEtag}
+    ├─ if !isRunning or no githubToken → return false
+    ├─ daily reset check (dailySelectedCount → 0 at date change)
+    ├─ GET /repos/{owner}/{repo}/issues?labels=...&state=open&sort=created&direction=desc
+    │   (paginated per_page=100 — full snapshot, newest first)
     │
-    ├─ 200 OK → save new ETag + X-Poll-Interval, then process events:
-    │   ├─ IssuesEvent (opened/labeled):
-    │   │   ├─ skip if created_at > 7 days ago
-    │   │   ├─ not already in DB + under daily limit
-    │   │   │   → CREATE NotificationRecord (PENDING) + increment dailySelectedCount
-    │   │   └─ already-tracked (PENDING or SENT): SET hasPendingUpdate=true
-    │   ├─ IssuesEvent (edited): sync title/body
-    │   └─ IssueCommentEvent on tracked issue: SET hasPendingUpdate=true
+    ├─ tracked in DB but ABSENT from results → soft-delete (closed / label removed)
     │
-    ├─ 304 Not Modified → save interval, skip event processing
-    ├─ 403 rate limited → back off to 120s
+    ├─ for each issue in the snapshot:
+    │   ├─ NEW (not in DB):
+    │   │   ├─ skip unless created today            (isCreatedToday guard)
+    │   │   ├─ skip if daily limit reached
+    │   │   └─ CREATE NotificationRecord (PENDING) + increment dailySelectedCount
+    │   │       + write to issueDataCache (Map<issueNumber,{title,body,cachedAt}>)
+    │   └─ EXISTING (title/body/comment-count/updated-at changed):
+    │       └─ sync fields; if status=SENT → SET hasPendingUpdate=true
     │
-    ├─ Direct REST sync (every cycle except 403):
-    │   for each active PENDING/SENT record:
-    │   GET /repos/{owner}/{repo}/issues/{n}
-    │     → any field changed → SET hasPendingUpdate=true, sync fields
+    ├─ returns hasActivity: boolean
     │
-    ├─ NotificationSenderService.send()   ← parallel, fire-and-forget
-    ├─ AutoProposalService.run()          ← parallel, fire-and-forget
-    │
-    └─ return pollInterval
-           │
-           ▼
-    setTimeout(poll, pollInterval * 1000)   ← reschedules itself
+    └─ if hasActivity:
+        ├─ NotificationSenderService.send()   ← parallel, fire-and-forget
+        └─ AutoProposalService.run()          ← parallel, fire-and-forget
 ```
 
 ### NotificationSenderService
@@ -150,15 +114,14 @@ EventsPollerService.poll()
 isRunning lock? → skip (prevents overlap)
 isWithinNotifyWindow()? NO → hold (emails wait in DB until window opens)
 
-PASS 1: all PENDING records (deletedAt=null)
-    ├─ 3-email cap check:
-    │   if myGithubUsername set AND updateEmailCount >= 2 AND no ProposalRecord exists
-    │   → skip (cap reached, no proposal posted yet)
+PASS 1: all PENDING records (deletedAt=null) — initial email
     ├─ sendMail() success → status=SENT, notifiedAt=now, labelDetectedAt measured for lag log
     └─ sendMail() fail   → attempts++, stays PENDING (retried next cycle)
 
-PASS 2: all SENT records where hasPendingUpdate=true (deletedAt=null)
-    ├─ same 3-email cap check (updateEmailCount >= 2, no proposal)
+PASS 2: all SENT records where hasPendingUpdate=true (deletedAt=null) — update email
+    ├─ proposal-comment gate:
+    │   no ProposalRecord for this issue (matched on myGithubUsername when set)
+    │   → clear hasPendingUpdate, skip (no update email without a proposal)
     ├─ sendMail() success → hasPendingUpdate=false, updateEmailCount++
     └─ sendMail() fail   → stays true (retried next cycle)
 ```
@@ -198,15 +161,15 @@ watchedRepo          "owner/repo"
 watchedLabel         "Help Wanted"
 issueLimit           4  (max new issues per day)
 githubToken          optional PAT
-lastEtag             saved ETag from last Events API response
-pollIntervalSeconds  60 (updated from X-Poll-Interval header)
+lastEtag             legacy column — no longer used (poller does not use ETags)
+pollIntervalSeconds  legacy column — poller now runs on a fixed 5s interval
 dailySelectedCount   0..N (how many new issues selected today)
 dailyResetDate       "YYYY-MM-DD" (when count was last reset)
 isRunning            true/false (master switch)
 notifyStartTime      "HH:MM" or "" (notify window start)
 notifyEndTime        "HH:MM" or "" (notify window end)
 notifyTimezone       IANA timezone (default: "UTC")
-myGithubUsername     your GitHub username (for 3-email cap + auto-proposal attribution)
+myGithubUsername     your GitHub username (for update-email gating + auto-proposal attribution)
 autoProposal         true/false (auto-generate proposals on new issue detection)
 updatedAt
 ```
@@ -228,7 +191,7 @@ attempts             count of email send attempts
 lastAttemptAt        last attempt timestamp
 notifiedAt           when initial email was successfully sent
 hasPendingUpdate     true when an update email is queued
-updateEmailCount     total update emails sent (used by 3-email cap)
+updateEmailCount     total update emails sent
 lastUpdateEmailAt    when last update email was sent
 labelDetectedAt      when the issue was first detected (used to measure label→email lag)
 deletedAt            soft delete timestamp (null = active)
@@ -257,17 +220,17 @@ createdAt
 
 ## 5. Key Design Decisions
 
-### Fast Poller for sub-10s email latency
-The Events API has a dynamic poll interval (minimum 60s enforced by `X-Poll-Interval`). A separate 5s REST Issues API poller was added to achieve ~8–12s label-to-email latency. The Fast Poller queries the Issues API directly (not the Events API, which has the 60s floor) to detect new issues within the 5s window. Both pollers enforce the same 7-day `isRecentlyCreated` guard.
+### Single 5s full-scan poller for sub-10s latency and zero misses
+A single poller runs `fullScan()` every 5 seconds against the REST Issues API, achieving ~8–12s label-to-email latency. It fetches a **complete snapshot** of all open labeled issues each cycle (paginated, sorted by creation date, no incremental `since` filter). A full snapshot is deliberately chosen over an incremental watermark so that a failed or skipped cycle is fully recovered by the next one — no newly created issue can be missed. The same cycle also detects updates (field changes) and closures (issues absent from the snapshot). New issues are gated by the `isCreatedToday` guard.
 
 ### Parallel email + proposal
 Both `NotificationSenderService.send()` and `AutoProposalService.run()` are fired after every detection cycle using `Promise.catch()` without `await` — neither blocks the scheduler or each other. The proposal (~20s) does not delay the email (~10s). Each service has its own `isRunning` static flag to prevent overlapping concurrent invocations.
 
 ### In-memory issue data cache
-The Fast Poller populates an in-memory `Map<issueNumber, {title, body, cachedAt}>` during detection. `AutoProposalService` reads from this cache first, saving one `GET /repos/.../issues/{n}` call per issue (~400–1200ms). Cache TTL is 2 minutes; entries are evicted on read.
+`fullScan()` populates an in-memory `Map<issueNumber, {title, body, cachedAt}>` when it creates records. `AutoProposalService` reads from this cache first, saving one `GET /repos/.../issues/{n}` call per issue (~400–1200ms). Cache TTL is 2 minutes; entries are evicted on read.
 
-### 3-email cap when no proposal posted
-If `myGithubUsername` is set and no `ProposalRecord` exists for that user on an issue, emails are capped at 3 total (1 initial + 2 updates). The cap lifts automatically once any proposal is posted (either by `autoProposal` or manually via `POST /api/proposals`). This prevents inbox spam while the auto-proposer is still running.
+### Update emails only for issues with a proposal comment
+An initial email is always sent for a newly detected issue. **Update** emails are sent only when a `ProposalRecord` already exists for the issue (matched on `myGithubUsername` when set). If none exists, `hasPendingUpdate` is cleared and no update email goes out. This keeps update notifications focused on issues you are actually engaged with (i.e. have proposed on), and avoids inbox spam on issues you have not yet acted on.
 
 ### No Redis / BullMQ
 The `NotificationRecord` table serves as the job queue. `status=PENDING` = queued. The send is triggered reactively after every poller cycle — not on its own fixed timer.
@@ -283,17 +246,17 @@ Only after both pass does it call `generateProposal()` (the expensive LLM call).
 
 The LLM only sees the issue title/body/comments — it has no access to repository source code — so the generated root cause is explicitly framed as a text-based hypothesis.
 
-### ETag-based polling (not timestamp-based)
-The Events API is polled with `If-None-Match: {lastEtag}`. GitHub returns 304 if nothing changed, which does not count against rate limits and avoids re-processing the same events. The `X-Poll-Interval` header is respected and saved to the DB.
+### Full-snapshot polling (not incremental/ETag-based)
+The poller fetches the full list of open labeled issues every cycle rather than relying on an ETag/`since` watermark. This trades some rate-limit efficiency for correctness: a complete snapshot every 5s means a dropped or failed cycle cannot cause a newly created issue to be permanently missed. The `lastEtag` and `pollIntervalSeconds` columns remain in the schema for backward compatibility but are no longer used by the poller.
 
 ### DB-backed Config (not env vars)
 All runtime settings live in the `Config` table, editable via `PUT /api/config` without a server restart. Only SMTP credentials, `DATABASE_URL`, and `ANTHROPIC_API_KEY` are in env vars (they require a restart to change).
 
 ### isRunning flag
-`Config.isRunning` is the master switch. Both schedulers check it on every cycle. `POST /api/config/start|stop` toggle it in the DB.
+`Config.isRunning` is the master switch. The scheduler checks it on every cycle. `POST /api/config/start|stop` toggle it in the DB.
 
-### 7-day recently-created filter
-Both pollers only select issues created within the last 7 days. This prevents stale events (an old issue re-labeled) from consuming the daily issue limit and ensures the proposal content is relevant.
+### Current-day created filter
+Only issues created on the current calendar day are selected (`isCreatedToday`). This prevents stale issues (e.g. an old issue re-labeled) from consuming the daily issue limit and ensures notifications and proposals target freshly-posted work.
 
 ---
 
@@ -374,7 +337,7 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for step-by-step instructions.
 | ORM | Prisma | Type-safe queries, schema-first, SQLite support |
 | Database | SQLite | Zero infrastructure, persistent volumes on Fly.io |
 | Job queue | DB-backed (NotificationRecord) | No Redis needed, simpler, visible in Prisma Studio |
-| Detection strategy | 5s Fast Poller (REST) + ~60s Events Poller (ETag) | Fast Poller for latency; Events Poller for updates and rate-efficient polling |
+| Detection strategy | Single 5s full-snapshot poller (REST Issues API) | Complete snapshot every cycle → sub-10s latency, handles new/updated/closed issues, and guarantees no new issue is missed |
 | Email | Nodemailer (pooled SMTP, `pool: true, maxConnections: 1`) | Persistent connection saves ~1–2s per email |
 | LLM (proposals) | Anthropic SDK `claude-opus-4-8` | Best reasoning quality for root cause analysis; async so latency (~20s) doesn't block email |
 | Validation | Zod | Runtime + compile-time type safety |
